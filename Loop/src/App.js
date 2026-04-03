@@ -104,3 +104,26 @@ function App() {
 }
 
 export default App;
+
+/*
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Auth from "./pages/Auth.jsx";
+import Signup from "../../Documents/GitHub/semothon_9/Loop/src/pages/Signup";
+import Profile from "../../Documents/GitHub/semothon_9/Loop/src/pages/Profile";
+import Home from "./pages/Home";
+
+function App() {
+    return (
+        <BrowserRouter>
+            <Routes>
+                <Route path="/" element={<Auth />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/home" element={<Home />} />
+            </Routes>
+        </BrowserRouter>
+    );
+}
+
+export default App;
+*/
