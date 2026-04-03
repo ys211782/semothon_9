@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 # 분리한 파일들에서 가져오기
 import models
+import auth as auth_router
 from database import engine, get_db
 
 # DB 테이블 생성
@@ -31,6 +32,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 app = FastAPI(title="Semothon 9 API", lifespan=lifespan)
+app.include_router(auth_router.router)
 
 # --- Pydantic 스키마 (데이터 입출력 형식) ---
 class UserUpdate(BaseModel):
@@ -79,7 +81,13 @@ class ProofCreate(BaseModel):
 def get_current_user(user_id: int = 1, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
-        user = models.User(id=user_id, name=f"테스트 유저 {user_id}", points=100)
+        # 테스트용: Auth 레코드가 없으면 함께 생성
+        auth = db.query(models.Auth).filter(models.Auth.id == user_id).first()
+        if not auth:
+            auth = models.Auth(email=f"test{user_id}@test.com", phone="", password="test")
+            db.add(auth)
+            db.flush()
+        user = models.User(id=auth.id, name=f"테스트 유저 {user_id}", points=100)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -90,13 +98,6 @@ def get_current_user(user_id: int = 1, db: Session = Depends(get_db)):
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "서버가 정상 작동 중입니다. /docs로 이동하세요."}
-
-# [POST] 회원가입
-@app.post('/signup')
-def signup(email: str, phone: str, db: Session = Depends(get_db)):
-    user = models.User(email=email, phone=phone)
-    db.add(user); db.commit(); db.refresh(user)
-    return {'message': 'Success', 'user': user}
 
 # [GET] 내 프로필 조회
 @app.get("/users/me", response_model=UserResponse, tags=["Users"])
@@ -175,7 +176,7 @@ def join_matching(activity_id: int, db: Session = Depends(get_db), current_user:
     )
     available_room = next(
         (r for r in sorted(available_room, key=lambda r: r.id)
-         if r.status == "open" and len(r.members) < r.capacity),
+        if r.status == "open" and len(r.members) < r.capacity),
         None
     )
 
