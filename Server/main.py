@@ -293,38 +293,60 @@ def reject_partner_proof(room_id: int, target_user_id: int, db: Session = Depend
     return {"message": "인증을 반려했습니다. 상대방이 재제출할 수 있습니다."}
 
 
-# [POST] 특정 멤버의 인증 승인 (포인트 지급)
+# [POST] 특정 멤버의 인증 승인 및 방 종료 처리
 @app.post("/rooms/{room_id}/approve", tags=["Proof"])
 def approve_partner_proof(room_id: int, target_user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 1. 기본 검증
     if target_user_id == current_user.id:
         raise HTTPException(status_code=400, detail="자신의 인증은 승인할 수 없습니다.")
+    
     proof = db.query(models.Proof).filter_by(room_id=room_id, user_id=target_user_id).first()
     if not proof:
         raise HTTPException(status_code=404, detail="승인할 인증 내역이 없습니다.")
     if proof.status == "approved":
         return {"message": "이미 승인된 인증입니다."}
 
+    # 2. 승인 처리 및 대상자 포인트 지급
     proof.status = "approved"
     author = db.query(models.User).filter_by(id=proof.user_id).first()
     author.points += 100
 
-    # 모든 멤버가 인증을 제출했고 전부 승인됐으면 방 종료
-    proof_room = db.query(models.Room).filter_by(id=room_id).first()
-    member_ids = {m.user_id for m in proof_room.members}
-    approved_ids = {
-        p.user_id for p in db.query(models.Proof).filter_by(room_id=room_id).all()
-        if p.status == "approved"
-    }
+    # 3. 방 종료 조건 체크 (모든 멤버가 승인되었는지)
+    room = db.query(models.Room).filter_by(id=room_id).first()
+    activity = db.query(models.Activity).filter_by(id=room.activity_id).first()
+    
+    member_ids = {m.user_id for m in room.members}
+    all_proofs = db.query(models.Proof).filter_by(room_id=room_id).all()
+    approved_ids = {p.user_id for p in all_proofs if p.status == "approved"}
+
+    # 모든 인원이 승인 완료된 경우
     if member_ids == approved_ids:
-        proof_room.status = "closed"
+        # A. 모든 멤버의 활동을 Record에 저장
+        for m_id in member_ids:
+            new_record = models.Record(
+                user_id=m_id,
+                content=f"[{activity.name}] 협동 미션 완료! 보상 100포인트 획득"
+            )
+            db.add(new_record)
+        
+        # B. 방 관련 데이터 삭제 (Cascade 설정이 없다고 가정하고 수동 삭제)
+        # 삭제 순서: 인증(Proof) -> 방 멤버(RoomMember) -> 방(Room)
+        db.query(models.Proof).filter_by(room_id=room_id).delete()
+        db.query(models.RoomMember).filter_by(room_id=room_id).delete()
+        db.delete(room)
+        
+        db.commit()
+        return {
+            "message": "모든 인원이 인증을 완료했습니다! 기록 저장 후 방이 해체되었습니다.",
+            "room_closed": True
+        }
 
+    # 아직 승인 대기 중인 인원이 있는 경우
     db.commit()
-    room_closed = proof_room.status == "closed"
-    msg = f"{author.name}님의 인증을 승인했습니다! 보상이 지급되었습니다."
-    if room_closed:
-        msg += " 모든 인원이 인증을 완료하여 방이 종료되었습니다."
-    return {"message": msg, "room_closed": room_closed}
-
+    return {
+        "message": f"{author.name}님의 인증을 승인했습니다! (상대방의 승인을 기다리는 중)",
+        "room_closed": False
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
