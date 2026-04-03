@@ -7,17 +7,23 @@ from database import Base
 
 class Auth(Base):
     __tablename__ = "auths"
-    id = Column(Integer, primary_key=True, index=True) 
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     email = Column(String, unique=True, index=True)
     phone = Column(String)
+    password = Column(String, nullable=False)
+
+    user = relationship("User", back_populates="auth", uselist=False)
 
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    # Auth.id를 공유 (회원가입 시 Auth에서 생성된 id 사용)
+    id = Column(Integer, ForeignKey("auths.id"), primary_key=True)
     name = Column(String, default="새 사용자")
     email = Column(String, unique=True, index=True, nullable=True)
+
+    auth = relationship("Auth", back_populates="user")
     profile_image = Column(String, default="default.png")
     
     # 포인트 및 게임 데이터
